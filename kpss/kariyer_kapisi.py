@@ -24,12 +24,11 @@ from .requirements import extract as extract_requirements
 PARSER_VERSION = 2
 API = "https://api.kariyerkapisi.gov.tr/api/ilan/GetIlanPreviewPublic"
 DETAIL_URL = "https://kariyerkapisi.gov.tr/IlanDetay?i={guid}"
+# Yalnızca dürüst, kendini tanıtan başlıklar: tarayıcı/site taklidi (Origin, Referer, cookie) yok.
 HEADERS = {
-    "User-Agent": "kpss-tracker-test/0.1 (kisisel, dusuk hacimli)",
-    "Accept": "application/json, text/plain, */*",
+    "User-Agent": "kpss-ilan-takip/0.2 (kisisel, dusuk hacimli)",
+    "Accept": "application/json",
     "Content-Type": "application/json",
-    "Origin": "https://kariyerkapisi.gov.tr",
-    "Referer": "https://kariyerkapisi.gov.tr/",
 }
 P_RE = re.compile(r"(?:KPSS\s*\(?\s*|\b)P(\d{1,3})\b")
 

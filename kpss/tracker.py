@@ -7,14 +7,16 @@ kk_test.py (güncel sürüm) aynı klasörde olmalı.
   python kk_tracker.py --reparse            # kayıtlı ham cevapları ağsız yeniden ayrıştır
   python kk_tracker.py --list-file liste.json --no-detail --db test.db   # ağsız test
 
-Her çalışmada 1 liste isteği atar; ayrıntı (2 istek) sadece YENİ veya DEĞİŞEN ilan için.
+Her çalışmada 1 liste isteği atar; ayrıntı (2 istek) YENİ veya DEĞİŞEN ilan için, ayrıca listede
+değişmeyen ilanların ayrıntısı en geç REFRESH_HOURS saatte bir yenilenir (çalışma başına en çok REFRESH_MAX).
 Ham cevaplar DB'de saklanır: ayrıştırıcıyı geliştirince tekrar istek atmadan --reparse yeter.
 """
 import argparse
+import hashlib
 import json
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from . import db as dbm
 from . import kariyer_kapisi as kk
@@ -22,6 +24,10 @@ from . import kariyer_kapisi as kk
 LIST_API = "https://api.kariyerkapisi.gov.tr/api/ilan/GetIseAlimPage"
 LIST_PAYLOAD = {"krM_ID": 0, "searchText": "", "il": "0", "ilanTuru": "0"}
 DELAY = 1.5  # ayrıntı istekleri arası bekleme (sn)
+# Liste değişmese de ilan metni/kadro değişebilir: her ilanın ayrıntısı en geç REFRESH_HOURS saatte bir
+# yeniden çekilir; her çalışmada en çok REFRESH_MAX ilan (en eskiden başlayarak), istek sayısı düşük kalır.
+REFRESH_HOURS = 12
+REFRESH_MAX = 6
 
 # ---------- HTTP ----------
 def make_session():
@@ -76,6 +82,17 @@ def check_total(raw: dict):
               "(sayfalama/kesilme olabilir)", file=sys.stderr)
 
 
+def content_fp(item: dict) -> str:
+    """Kullanıcıyı etkileyen içeriğin parmak izi: ilan metni, tarihler, kontenjan ve kadrolar
+    (unvan, şart metni, adet, il/kontenjan). Ham alanlardan: ayrıştırıcı sürümünden bağımsız."""
+    pos = [[p.get("unvan"), p.get("requirements_text"), p.get("quantity"),
+            [[x.get("il"), x.get("kontenjan")] for x in p.get("provinces") or []]]
+           for p in item.get("positions") or []]
+    base = [item.get("requirements_text"), item.get("application_start"), item.get("application_deadline"),
+            item.get("quota"), pos]
+    return hashlib.sha256(json.dumps(base, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+
+
 def build_item(guid: str, raw_detail: dict, raw_alt) -> dict:
     """Ham cevaplardan ortak modeli üretir (ağ yok; --reparse bunu kullanır)."""
     item = kk.normalize(raw_detail, guid)
@@ -93,6 +110,7 @@ def build_item(guid: str, raw_detail: dict, raw_alt) -> dict:
     if types:
         item["kpss_score_types"] = sorted(types, key=lambda x: int(x[1:]))
         item["needs_review"] = [x for x in item["needs_review"] if x != "kpss_not_found_in_text"]
+    item["content_hash"] = content_fp(item)
     return item
 
 
@@ -105,7 +123,9 @@ def fetch_detail(session, guid: str):
         print(f"[alt] {guid}: {e}", file=sys.stderr)
     refs = [{"kind": "detail", "url": kk.API, "payload": {"ilanGuid": guid}},
             {"kind": "alt", "url": kk.ALT_API, "payload": {"ilanGuid": guid}}]
-    return build_item(guid, raw_detail, raw_alt), {"detail": raw_detail, "alt": raw_alt, "refs": refs}
+    item = build_item(guid, raw_detail, raw_alt)
+    item["fetched_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return item, {"detail": raw_detail, "alt": raw_alt, "refs": refs}
 
 
 def reparse(con, only_stale=False) -> int:
@@ -120,11 +140,76 @@ def reparse(con, only_stale=False) -> int:
                 pass
         b = json.loads(r["raw_json"])
         item = build_item(r["guid"], b["detail"], b.get("alt"))
+        try:  # ağsız yeniden ayrıştırma ayrıntının çekildiği zamanı değiştirmez
+            item["fetched_at"] = (json.loads(r["detail_json"] or "{}") or {}).get("fetched_at")
+        except ValueError:
+            pass
         con.execute("UPDATE ilan SET detail_json=?, content_hash=? WHERE guid=?",
                     (json.dumps(item, ensure_ascii=False), item["content_hash"], r["guid"]))
         n += 1
     con.commit()
     return n
+
+
+def _refresh_key(detail_json, now: datetime):
+    """Yenilenmesi gerekiyorsa sıralama anahtarı ("" = hiç zaman bilgisi yok, en önce), gerekmiyorsa None."""
+    try:
+        ts = (json.loads(detail_json) or {}).get("fetched_at") if detail_json else None
+        when = datetime.fromisoformat(ts) if ts else None
+    except (ValueError, TypeError):
+        return ""
+    if when is None:
+        return ""
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return ts if now - when >= timedelta(hours=REFRESH_HOURS) else None
+
+
+def refresh_details(con, session, guids, now_iso: str, limit: int = REFRESH_MAX):
+    """Listede değişmeyen ilanların ayrıntısını en eskiden başlayarak yeniden çeker ve kaydeder.
+    Dönüş: (metni değişen sayısı, hata sayısı). Metni değişen ilanda (PostgreSQL'de) o ilanla eşleşmesi
+    olan kullanıcılara REQUIREMENT_CHANGED olayı yazılır; eşleşmeler zaten bir sonraki sync'te yeniden hesaplanır."""
+    now = datetime.fromisoformat(now_iso)
+    stale = []
+    for guid in guids:
+        row = con.execute("SELECT detail_json FROM ilan WHERE guid=?", (guid,)).fetchone()
+        if row is None:
+            continue
+        key = _refresh_key(row["detail_json"], now)
+        if key is not None:
+            stale.append((key, guid, row["detail_json"]))
+    stale.sort()
+    changed = errors = 0
+    for _, guid, old_json in stale[:limit]:
+        try:
+            detail, bundle = fetch_detail(session, guid)
+        except Exception as e:  # eski kayıt kalır, sonraki çalışmada yeniden denenir
+            errors += 1
+            print(f"[yenileme] {guid}: {e}", file=sys.stderr)
+            continue
+        finally:
+            time.sleep(DELAY)
+        try:
+            old = json.loads(old_json) if old_json else None
+        except ValueError:
+            old = None
+        refs = [{"kind": "list", "url": LIST_API, "payload": LIST_PAYLOAD, "fetched_at": now_iso}]
+        refs += [{**r, "fetched_at": now_iso} for r in bundle["refs"]]
+        con.execute("UPDATE ilan SET detail_json=?, raw_json=?, content_hash=?, source_refs=? WHERE guid=?",
+                    (json.dumps(detail, ensure_ascii=False),
+                     json.dumps({k: v for k, v in bundle.items() if k != "refs"}, ensure_ascii=False),
+                     detail["content_hash"], json.dumps(refs, ensure_ascii=False), guid))
+        if old is not None and content_fp(old) != detail["content_hash"]:
+            changed += 1
+            print(f"METİN DEĞİŞTİ {detail.get('title')}\n         {kk.DETAIL_URL.format(guid=guid)}")
+            if con.pg:
+                con.execute(
+                    """INSERT INTO notification_outbox (user_id, guid, event, payload)
+                       SELECT user_id, guid, 'REQUIREMENT_CHANGED', cast(? as jsonb) FROM matches
+                       WHERE guid=? AND level IN ('ok','check') ON CONFLICT DO NOTHING""",
+                    (json.dumps({"fp": detail["content_hash"], "title": detail.get("title")}, ensure_ascii=False),
+                     guid))
+    return changed, errors
 
 
 # ---------- Çıktı ----------
@@ -198,7 +283,7 @@ def run(a) -> int:
     items = raw.get("searchIlan", [])
     check_total(raw)
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    seen, n_new, n_changed, errors = set(), 0, 0, 0
+    seen, fetched, n_new, n_changed, errors = set(), set(), 0, 0, 0
 
     for it in items:
         rec = list_record(it)
@@ -215,6 +300,7 @@ def run(a) -> int:
         if not a.no_detail and session:
             try:
                 detail, bundle = fetch_detail(session, guid)
+                fetched.add(guid)
             except Exception as e:
                 errors += 1
                 print(f"[hata] {guid}: {e}", file=sys.stderr)
@@ -244,6 +330,13 @@ def run(a) -> int:
         n_changed += kind == "değişti"
         describe(kind, rec, detail)
 
+    n_text = 0
+    if session and not a.no_detail:
+        # Yenileme hatası taramayı başarısız saymaz (ilan zaten kayıtlı); yalnızca loglanır.
+        n_text, _ = refresh_details(con, session, sorted(seen - fetched), now)
+        n_changed += n_text
+        con.commit()
+
     if session:
         from .sources import REGISTRY
         for name, fetch in REGISTRY.items():
@@ -258,7 +351,7 @@ def run(a) -> int:
         con.execute(f"UPDATE ilan SET active=0 WHERE source='kariyer_kapisi' AND guid NOT IN ({marks})", tuple(seen))
     con.execute("INSERT INTO runs VALUES (?,?,?,?,?)", (now, len(items), n_new, n_changed, errors))
     con.commit()
-    print(f"\nliste: {len(items)} | yeni: {n_new} | değişen: {n_changed} | hata: {errors}")
+    print(f"\nliste: {len(items)} | yeni: {n_new} | değişen: {n_changed} (metin: {n_text}) | hata: {errors}")
     return 1 if errors else 0
 
 
