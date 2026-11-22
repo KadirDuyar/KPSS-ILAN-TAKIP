@@ -22,4 +22,4 @@ jobs:
       - name: Tara ve eşleştir
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}   # Supabase: Session pooler bağlantı adresi
-        run: python -m kpss
+        run: python -m kpss --no-scan
