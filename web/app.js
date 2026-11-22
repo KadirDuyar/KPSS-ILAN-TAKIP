@@ -215,6 +215,7 @@ async function profileView(main) {
     h("button", { class: "plain", type: "button", onclick: () => r.remove() }, "Sil")); kBox.append(r); };
   Object.entries(get(P, "exams.kpss.scores") || {}).forEach(([t, v]) => kRow(t, v ?? ""));
   if (!kBox.children.length) kRow("P3", "");
+  const kComplete = h("input", { type: "checkbox", checked: get(P, "exams.kpss.complete") === true });
 
   /* ehliyet */
   const lic = get(P, "credentials.driving_license");
@@ -243,6 +244,7 @@ async function profileView(main) {
     out.education = [...eduBox.children].map(r => { const [l, s, p] = r.querySelectorAll("select,input"); return { level: l.value, status: s.value, program: p.value.trim() || null }; });
     const sc = {}; [...kBox.children].forEach(r => { const [t, v] = r.querySelectorAll("input"); const k = t.value.trim().toUpperCase(); if (k) sc[k] = v.value === "" ? null : Number(v.value); });
     set(out, "exams.kpss.scores", sc);
+    set(out, "exams.kpss.complete", kComplete.checked);
     const chosen = licBoxes.map(l => l.firstChild).filter(i => i.checked).map(i => i.value);
     set(out, "credentials.driving_license", licMode.value === "" ? null : licMode.value === "none" ? [] : chosen);
     set(out, "consent.special_categories", consent.checked);
@@ -259,13 +261,15 @@ async function profileView(main) {
     h("fieldset", {}, h("legend", {}, "Kişisel"), h("div", { class: "grid" },
       text("personal.birth_date", "Doğum tarihi", { type: "date" }),
       sel("personal.gender", "Cinsiyet", [["", "Belirtmedim"], ["E", "Erkek"], ["K", "Kadın"]]),
-      sel("personal.military", "Askerlik", [["", "Belirtmedim"], ["done", "Yaptım"], ["exempt", "Muafım"], ["not_done", "Yapmadım"]]),
+      sel("personal.military", "Askerlik", [["", "Belirtmedim"], ["done", "Yaptım"], ["exempt", "Muafım"], ["postponed", "Erteledim (tecil)"], ["not_done", "Yapmadım"]]),
       text("personal.residence_province", "İkamet ili", { list: "ill" }))),
     h("fieldset", {}, h("legend", {}, "Öğrenim"), eduBox, h("button", { class: "plain", type: "button", onclick: () => eduRow() }, "+ Öğrenim ekle")),
     h("fieldset", {}, h("legend", {}, "Sınavlar"),
       h("div", { class: "grid" }, text("exams.kpss.year", "KPSS yılı", { type: "number", min: 2000 }), text("exams.ales.score", "ALES puanı", { type: "number", step: "0.001" }),
         text("exams.language.YDS", "YDS", { type: "number", step: "0.001" }), text("exams.language.YOKDIL", "YÖKDİL", { type: "number", step: "0.001" })),
-      h("p", { class: "meta", style: "margin:14px 0 0" }, "KPSS puanları"), kBox, h("button", { class: "plain", type: "button", onclick: () => kRow() }, "+ Puan ekle")),
+      h("p", { class: "meta", style: "margin:14px 0 0" }, "KPSS puanları"), kBox, h("button", { class: "plain", type: "button", onclick: () => kRow() }, "+ Puan ekle"),
+      h("label", { class: "checks", style: "display:flex;gap:8px;align-items:center;color:var(--ink);margin-top:10px" }, kComplete,
+        "Sahip olduğum bütün puan türlerini girdim (listede olmayan tür istenirse “Uygun değil” say)")),
     h("fieldset", {}, h("legend", {}, "Öğrencilik ve çalışma"), h("div", { class: "grid" },
       tri("student.formal_enrolled", "Örgün öğrenci kaydı (aktif/pasif)"), tri("student.open_distance_enrolled", "Açık/uzaktan öğretim kaydı"),
       tri("work.retired_pension", "Emekli aylığı alıyor muyum"), tri("work.insured_now", "Şu an sigortalı çalışıyor muyum"),

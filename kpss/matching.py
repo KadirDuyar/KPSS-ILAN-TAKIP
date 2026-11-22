@@ -22,20 +22,11 @@ from . import requirements as reqs
 DETAIL_URL = "https://kariyerkapisi.gov.tr/IlanDetay?i={guid}"
 LEVEL = {"ok": 0, "note": 0, "check": 1, "no": 2}
 LABEL = {"ok": "✅ UYGUN", "check": "⚠️ KONTROL ET", "no": "❌ UYGUN DEĞİL"}
-EDU = {"LİSE": 1, "ÖNLİSANS": 2, "LİSANS": 3, "YÜKSEKLİSANS": 4}
 _UP = str.maketrans({"i": "İ", "ı": "I"})
 
 
 def tr_upper(s) -> str:
     return (s or "").translate(_UP).upper()
-
-
-def edu_rank(text):
-    t = tr_upper(text).replace(" ", "")
-    for key in ("YÜKSEKLİSANS", "ÖNLİSANS", "LİSANS", "LİSE"):  # sıra önemli
-        if key in t:
-            return EDU[key]
-    return None
 
 
 def years_between(birth: date, on: date) -> int:
@@ -68,19 +59,50 @@ def _merge_structured(reqs_list: list, p: dict) -> list:
     return reqs_list
 
 
-def check_position(p: dict, deadline: datetime, prof: dict, ilan: dict = None, ilan_type: str = None):
+# 81 il (ASCII, küçük harf). İl metninde bunlardan hiçbiri yoksa ("MERKEZ", "BAKANLIK MERKEZ TEŞKİLATI")
+# il kararı verilemez: "check", asla "no" değil.
+PROVINCES = set("""adana adiyaman afyonkarahisar agri amasya ankara antalya artvin aydin balikesir bilecik bingol
+bitlis bolu burdur bursa canakkale cankiri corum denizli diyarbakir edirne elazig erzincan erzurum eskisehir
+gaziantep giresun gumushane hakkari hatay isparta mersin istanbul izmir kars kastamonu kayseri kirklareli kirsehir
+kocaeli konya kutahya malatya manisa kahramanmaras mardin mugla mus nevsehir nigde ordu rize sakarya samsun siirt
+sinop sivas tekirdag tokat trabzon tunceli sanliurfa usak van yozgat zonguldak aksaray bayburt karaman kirikkale
+batman sirnak bartin ardahan igdir yalova karabuk kilis osmaniye duzce""".split())
+ALIASES = {"afyon": "afyonkarahisar", "maras": "kahramanmaras", "urfa": "sanliurfa", "icel": "mersin",
+           "antep": "gaziantep"}
+
+
+def _prov_tokens(text: str) -> set:
+    toks = set(re.split(r"[^a-z]+", reqs.norm(text)))
+    return {ALIASES.get(t, t) for t in toks if ALIASES.get(t, t) in PROVINCES}
+
+
+def province_check(p: dict, prof: dict):
+    """None (sorun yok) veya (düzey, gerekçe)."""
+    wanted = set()
+    for x in pref(prof, "provinces", []) or []:
+        wanted |= _prov_tokens(str(x))
+    if not wanted:
+        return None
+    if not p.get("provinces"):
+        return ("check", "il bilgisi yok")
+    text = " ".join(str(x.get("il") or "") for x in p["provinces"])
+    if "turkiye geneli" in reqs.norm(text):
+        return None
+    found = _prov_tokens(text)
+    if not found:
+        return ("check", f"il belirsiz ({text[:60]})")
+    return None if wanted & found else ("no", "il uyuşmuyor")
+
+
+def check_position(p: dict, deadline: datetime, prof: dict, ilan: dict = None, ilan_type: str = None,
+                   n_positions: int = 1):
     """[(düzey, gerekçe)] — düzey: ok/check/no/note. Sadece ok olmayanlar döner."""
     res = []
     ilan = ilan or {}
-    wanted = {tr_upper(x) for x in pref(prof, "provinces", []) or []}
-    if wanted:
-        text = " ".join(tr_upper(x["il"]) for x in p.get("provinces", []))
-        toks = set(re.split(r"[^A-ZÇĞİÖŞÜ]+", text))
-        if not p.get("provinces"):
-            res.append(("check", "il bilgisi yok"))
-        elif not ("TÜRKİYE GENELİ" in text or wanted & toks):
-            res.append(("no", "il uyuşmuyor"))
-    rl = _merge_structured(reqs.extract_position(p, ilan, ilan_type), p)
+    pc = province_check(p, prof)
+    if pc:
+        res.append(pc)
+    rl = _merge_structured(reqs.extract_position(p, ilan, ilan_type, n_positions), p)
     for r in reqs.evaluate_all(rl, prof, deadline):
         if r["level"] != "ok":
             res.append((r["level"], r["msg"]))
@@ -96,15 +118,23 @@ def keyword_ok(p, title, prof) -> bool:
     return not inc or any(tr_upper(k) in hay for k in inc)
 
 
+def type_ok(ilan_type, prof) -> bool:
+    types = {reqs.norm(t) for t in pref(prof, "ilan_types", []) or []}
+    if not types:
+        return True
+    have = {reqs.norm(t) for t in str(ilan_type or "").split(",") if t.strip()}
+    return bool(types & have)
+
+
 def evaluate(row, prof, now: datetime):
     """Dönüş: None (ilgisiz/süresi geçmiş) veya {level, rows, ...}."""
-    types = pref(prof, "ilan_types", []) or []
-    if types and row["ilan_type"] not in types:
+    if not type_ok(row["ilan_type"], prof):
         return None
     dl = row["application_deadline"]
     deadline = datetime.fromisoformat(dl) if dl else datetime(2999, 1, 1)  # süre yoksa açık uçlu
     if deadline < now:
         return None
+    ref = deadline if dl else now          # yaş/fesih hesabı: bitiş yoksa bugün
     d = json.loads(row["detail_json"]) if row["detail_json"] else None
     positions = (d or {}).get("positions") or []
     ilan = d or {}
@@ -113,11 +143,17 @@ def evaluate(row, prof, now: datetime):
     if not positions:
         inc = pref(prof, "keywords_include", []) or []
         if not inc or any(tr_upper(k) in tr_upper(row["title"]) for k in inc):
-            cands.append(("check", None, ["kadro ayrıntısı alınamadı"]))
+            reasons = ["kadro ayrıntısı alınamadı: ilanı elle kontrol et"]
+            if ilan.get("requirements_text"):   # genel metin yine de okunur (hepsi soft: en kötü "check")
+                rl = reqs.extract_position({"requirements_text": ilan["requirements_text"]}, {}, row["ilan_type"], 2)
+                for r in rl:
+                    r["soft"] = True
+                reasons += [r["msg"] for r in reqs.evaluate_all(rl, prof, ref) if r["level"] != "ok"]
+            cands.append(("check", None, reasons))
     for p in positions:
         if not keyword_ok(p, row["title"], prof):
             continue
-        res = check_position(p, deadline, prof, ilan, row["ilan_type"])
+        res = check_position(p, ref, prof, ilan, row["ilan_type"], len(positions))
         lvl = max((LEVEL[x[0]] for x in res), default=0)
         level = [k for k, v in LEVEL.items() if v == lvl][0]
         cands.append((level, p, [r for _, r in res]))

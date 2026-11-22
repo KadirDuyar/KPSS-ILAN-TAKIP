@@ -63,7 +63,8 @@ class Extract(unittest.TestCase):
 
     def test_deneyim_dil(self):
         self.assertEqual(R.extract_text("Kamuda en az 3 yıl deneyim sahibi olmak")[0]["value"], 3)
-        self.assertEqual(R.extract_text("YDS’den en az 70 puan almış olmak")[0]["value"], {"exam": "YDS", "min": 70})
+        v = R.extract_text("YDS’den en az 70 puan almış olmak")[0]["value"]
+        self.assertEqual((v["exam"], v["min"]), ("YDS", 70))
 
     def test_bolum_genel_degil(self):
         self.assertIn("department_text", kinds("Bilgisayar mühendisliği mezunu olmak"))

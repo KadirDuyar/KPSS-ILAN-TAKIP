@@ -108,9 +108,16 @@ def fetch_detail(session, guid: str):
     return build_item(guid, raw_detail, raw_alt), {"detail": raw_detail, "alt": raw_alt, "refs": refs}
 
 
-def reparse(con) -> int:
+def reparse(con, only_stale=False) -> int:
+    """Ham cevaplardan ağsız yeniden ayrıştırır. only_stale: yalnızca eski ayrıştırıcı sürümüyle kaydedilenler."""
     n = 0
-    for r in con.execute("SELECT guid, raw_json FROM ilan WHERE raw_json IS NOT NULL").fetchall():
+    for r in con.execute("SELECT guid, raw_json, detail_json FROM ilan WHERE raw_json IS NOT NULL").fetchall():
+        if only_stale:
+            try:
+                if (json.loads(r["detail_json"] or "{}") or {}).get("parser") == kk.PARSER_VERSION:
+                    continue
+            except ValueError:
+                pass
         b = json.loads(r["raw_json"])
         item = build_item(r["guid"], b["detail"], b.get("alt"))
         con.execute("UPDATE ilan SET detail_json=?, content_hash=? WHERE guid=?",
@@ -176,6 +183,9 @@ def run(a) -> int:
     if a.reparse:
         print(f"{reparse(con)} ilan yeniden ayrıştırıldı")
         return 0
+    n = reparse(con, only_stale=True)   # ayrıştırıcı güncellendiyse eski kayıtları ağsız yenile
+    if n:
+        print(f"[reparse] {n} ilan yeni ayrıştırıcı sürümüyle (v{kk.PARSER_VERSION}) yenilendi")
 
     session = None
     if a.list_file:

@@ -17,8 +17,11 @@ import re
 import sys
 from datetime import datetime
 
+from . import requirements as R
 from .requirements import extract as extract_requirements
 
+# Ayrıştırıcı sürümü: kayıtlı detail_json bundan farklıysa tracker ham cevaplardan ağsız yeniden ayrıştırır.
+PARSER_VERSION = 2
 API = "https://api.kariyerkapisi.gov.tr/api/ilan/GetIlanPreviewPublic"
 DETAIL_URL = "https://kariyerkapisi.gov.tr/IlanDetay?i={guid}"
 HEADERS = {
@@ -76,9 +79,9 @@ def parse_position(p: dict) -> dict:
         return m.group(1).strip() if m else None
 
     scores = p_types(text)
-    # "en az 70 puan", "85 puan almış", "70 ve üzeri puan"; "KPSSP10" ve "100 puan üzerinden" hariç
-    min_score = g(r"(?<![A-Za-z\d])(\d{2,3}(?:[.,]\d+)?)\s*(?:ve\s+üzeri\s+)?puan(?!\w*\s+üzerinden)")
-    age = g(r"(\d{2})\s*yaşından gün almamış")
+    found = R.consolidate(extract_requirements(text))
+    val = lambda k: next((r["value"] for r in found if r["kind"] == k and not r.get("soft")), None)
+    min_score, age = val("kpss_min_score"), val("age_max")
     qty = g(r"ADET\s*:\s*(\d+)")
     return {
         "title": " ".join((p.get("ilanBaslik") or "").split()) or None,
@@ -89,8 +92,8 @@ def parse_position(p: dict) -> dict:
         "gender": g(r"CİNSİYET\s*:\s*([^\n]+)"),
         "kpss_score_type": scores[0] if scores else None,
         "kpss_score_types": scores or None,
-        "min_score": float(min_score.replace(",", ".")) if min_score else None,
-        "max_age": int(age) if age else None,
+        "min_score": min_score,
+        "max_age": age,
         "provinces": [
             {"il": k.get("il"), "kontenjan": k.get("kontenjan")}
             for k in (p.get("kontenjanList") or [])
@@ -146,6 +149,7 @@ def normalize(raw: dict, guid: str) -> dict:
     text = clean_text(raw.get("ilanMetni"))
     kpss = find_kpss(text)
     item = {
+        "parser": PARSER_VERSION,
         "source": "kariyer_kapisi",
         "source_id": raw.get("ilN_NO") or guid,
         "guid": guid,

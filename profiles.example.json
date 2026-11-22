@@ -8,13 +8,14 @@
         "birth_date": "2000-01-01",
         "gender": null,
         "military": null,
+        "_military": "done | exempt | postponed | not_done | not_applicable",
         "residence_province": null
       },
       "education": [
         { "level": "Lisans", "status": "graduated", "program": "Bilgisayar Mühendisliği" }
       ],
       "exams": {
-        "kpss": { "year": 2024, "scores": { "P3": 75.0, "P93": null } },
+        "kpss": { "year": 2024, "scores": { "P3": 75.0, "P93": null }, "complete": false },
         "language": { "YDS": 70 },
         "ales": { "score": null }
       },
