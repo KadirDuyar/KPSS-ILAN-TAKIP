@@ -1,0 +1,35 @@
+{
+  "version": 2,
+  "profiles": [
+    {
+      "name": "varsayilan",
+      "_not": "Örnek (anonim) profil. null = bilinmiyor: ilgili şartta 'KONTROL ET' çıkar, asla 'uygun değil' çıkmaz. Kendi bilgilerinle değiştir; kişisel profili repoya koyma (profiles.json .gitignore'da).",
+      "personal": {
+        "birth_date": "2000-01-01",
+        "gender": null,
+        "military": null,
+        "residence_province": null
+      },
+      "education": [
+        { "level": "Lisans", "status": "graduated", "program": "Bilgisayar Mühendisliği" }
+      ],
+      "exams": {
+        "kpss": { "year": 2024, "scores": { "P3": 75.0, "P93": null } },
+        "language": { "YDS": 70 },
+        "ales": { "score": null }
+      },
+      "student": { "formal_enrolled": false, "open_distance_enrolled": false },
+      "work": { "retired_pension": false, "insured_now": false, "experience_years": 0 },
+      "credentials": { "driving_license": ["B"], "certificates": [] },
+      "social": { "disability": { "has": null, "rate": null }, "former_convict": null },
+      "consent": { "special_categories": false },
+      "preferences": {
+        "provinces": ["ANKARA", "İSTANBUL", "İZMİR"],
+        "ilan_types": ["Sözleşmeli Personel İlanları", "A Grubu Memur (Kariyer Meslek)", "B Grubu Memur"],
+        "keywords_include": ["bilişim", "bilgisayar", "yazılım", "bilgi güvenliği", "siber", "network", "programcı", "çözümleyici", "sistem"],
+        "keywords_exclude": ["hemşire", "kütüphaneci", "avukat"],
+        "notify_check": true
+      }
+    }
+  ]
+}

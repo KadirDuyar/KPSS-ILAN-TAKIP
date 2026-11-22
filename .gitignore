@@ -1,0 +1,9 @@
+profiles.json
+data/
+certs/
+*.db
+__pycache__/
+venv/
+.venv/
+.env
+web/data.json
