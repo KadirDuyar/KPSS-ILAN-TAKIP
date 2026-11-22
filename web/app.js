@@ -234,6 +234,23 @@ async function profileView(main) {
   const types = h("div", { class: "checks" }, S.types.map(t => h("label", {}, h("input", { type: "checkbox", value: t, checked: (get(P, "preferences.ilan_types") || []).includes(t) }), t)));
   const notify = h("input", { type: "checkbox", checked: get(P, "preferences.notify_check") !== false });
 
+  /* bildirim (ntfy) */
+  const NTFY = "https://ntfy.sh", TOPIC_OK = /^[A-Za-z0-9_-]{20,64}$/;
+  const topic = h("input", { value: get(P, "notify.ntfy_topic") || "", placeholder: "en az 20 karakter: harf, rakam, - _", "aria-label": "ntfy konu adı", autocomplete: "off", spellcheck: "false" });
+  const notifyOn = h("input", { type: "checkbox", checked: get(P, "notify.enabled") !== false });
+  const nStatus = h("span", { role: "status", class: "meta" });
+  const genTopic = () => { const b = new Uint8Array(18); crypto.getRandomValues(b); topic.value = "kpss-" + [...b].map(x => x.toString(36).padStart(2, "0")).join("").slice(0, 28); nStatus.textContent = "Yeni konu oluşturuldu. ntfy uygulamasında bu konuya abone ol, sonra Kaydet’e bas."; };
+  const testTopic = async () => {
+    const t = topic.value.trim();
+    if (!TOPIC_OK.test(t)) { nStatus.className = "err"; nStatus.textContent = "Konu adı en az 20 karakter olmalı (harf, rakam, - _)."; return; }
+    nStatus.className = "meta"; nStatus.textContent = "Gönderiliyor…";
+    try {
+      const r = await fetch(NTFY, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ topic: t, title: "KPSS İlan Takip", message: "Deneme bildirimi: bildirimler bu konuya gelecek.", tags: ["bell"] }) });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      nStatus.className = "okmsg"; nStatus.textContent = "Gönderildi. Telefonuna geldiyse hazır; Kaydet’e basmayı unutma.";
+    } catch (e) { nStatus.className = "err"; nStatus.textContent = "Gönderilemedi: " + e.message; }
+  };
+
   const status = h("span", { role: "status", class: "meta" });
   const saveBtn = h("button", { class: "primary", type: "submit" }, "Kaydet");
 
@@ -251,6 +268,10 @@ async function profileView(main) {
     if (!consent.checked) { set(out, "social.disability", { has: null, rate: null }); set(out, "social.former_convict", null); }
     set(out, "preferences.ilan_types", [...types.querySelectorAll("input:checked")].map(i => i.value));
     set(out, "preferences.notify_check", notify.checked);
+    const tv = topic.value.trim();
+    if (tv && !TOPIC_OK.test(tv)) { saveBtn.disabled = false; status.className = "err"; status.textContent = "Bildirim konu adı en az 20 karakter olmalı (harf, rakam, - _)."; return; }
+    set(out, "notify.ntfy_topic", tv || null);
+    set(out, "notify.enabled", notifyOn.checked);
     if (get(out, "personal.gender") === "K") set(out, "personal.military", "not_applicable");
     const { error } = await sb.from("profiles").upsert({ user_id: session.user.id, email: session.user.email, data: out, updated_at: new Date().toISOString() });
     saveBtn.disabled = false;
@@ -286,6 +307,14 @@ async function profileView(main) {
       csv("preferences.keywords_include", "Unvanda geçmesini istediğim kelimeler", "bilişim, bilgisayar, yazılım, siber"),
       csv("preferences.keywords_exclude", "Unvanda görmek istemediğim kelimeler", "hemşire, avukat"),
       h("label", { class: "checks", style: "display:flex;gap:8px;align-items:center;color:var(--ink)" }, notify, "“Kontrol et” sonuçlarını da göster")),
+    h("fieldset", {}, h("legend", {}, "Bildirimler (ntfy)"),
+      h("p", { class: "hint" }, "Telefonuna ücretsiz ntfy uygulamasını kur, “Rastgele oluştur” ile bir konu adı al ve uygulamada o konuya abone ol. Konu adını bilen herkes bildirimleri görebilir: kimseyle paylaşma. Bildirimlerde yalnızca ilan adı, karar ve resmî bağlantı bulunur."),
+      h("label", {}, "Konu adı", topic),
+      h("div", { class: "row" },
+        h("button", { class: "plain", type: "button", onclick: genTopic }, "Rastgele oluştur"),
+        h("button", { class: "plain", type: "button", onclick: testTopic }, "Deneme bildirimi gönder")),
+      h("label", { class: "checks", style: "display:flex;gap:8px;align-items:center;color:var(--ink)" }, notifyOn, "Yeni uygun ilanlar için bildirim gönder"),
+      nStatus),
     h("div", { class: "savebar" }, saveBtn, status),
     h("datalist", { id: "ill" }, IL.map(x => h("option", { value: x }))), h("datalist", { id: "kt" }, KPSS_TYPES.map(x => h("option", { value: x }))));
   main.replaceChildren(form);
