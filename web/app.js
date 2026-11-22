@@ -102,6 +102,18 @@ async function loadAll() {
 }
 const showError = (main, e) => main.replaceChildren(h("div", { class: "notice err", role: "alert" }, "Veri alınamadı: " + e.message));
 
+/* Kadro kutuları: gerekçeler tüm kadrolarda aynıysa tek kez göster */
+function posLine(p) {
+  return [h("b", {}, p.unvan || "Kadro"), " ", h("span", { class: "meta" }, [(p.types || []).join("/"), p.min ? "≥" + p.min : null, p.il].filter(Boolean).join(" · "))];
+}
+function posBlocks(ps) {
+  const list = ps.slice(0, 4), key = p => JSON.stringify(p.reasons || []);
+  const reasons = r => (r && r.length ? h("ul", {}, r.map(x => h("li", {}, x))) : null);
+  if (list.length > 1 && list.every(p => key(p) === key(list[0])))
+    return h("div", { class: "pos" }, list.map(p => h("div", {}, posLine(p))), reasons(list[0].reasons));
+  return list.map(p => h("div", { class: "pos" }, h("div", {}, posLine(p)), reasons(p.reasons)));
+}
+
 /* ---------- ilan kartı ---------- */
 function card(r, level, positions) {
   const dl = daysLeft(r.application_deadline);
@@ -112,9 +124,7 @@ function card(r, level, positions) {
       h("span", { class: "meta" }, `Son: ${fmtDate(r.application_deadline)}`, dl != null ? ` (${dl >= 0 ? dl + " gün" : "bitti"})` : "")),
     h("h3", {}, r.title || "(başlıksız)"),
     h("div", { class: "meta" }, [r.institution, r.ilan_type].filter(Boolean).join(" · ")),
-    (positions || []).slice(0, 4).map(p => h("div", { class: "pos" },
-      h("b", {}, p.unvan || "Kadro"), " ", h("span", { class: "meta" }, [(p.types || []).join("/"), p.min ? "≥" + p.min : null, p.il].filter(Boolean).join(" · ")),
-      p.reasons && p.reasons.length ? h("ul", {}, p.reasons.map(x => h("li", {}, x))) : null)),
+    posBlocks(positions || []),
     h("div", { class: "links" },
       link ? h("a", { href: link, target: "_blank", rel: "noopener noreferrer" }, "Resmî ilanı aç ↗") : null,
       ext ? h("a", { href: ext, target: "_blank", rel: "noopener noreferrer" }, "Başvuru bağlantısı ↗") : null),

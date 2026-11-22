@@ -81,9 +81,10 @@ def _extract_line(line: str, n: str) -> list:
         m = re.search(pat, n)
         if m:
             add(kind, int(m.group(1)))
-    m = re.search(r"cinsiyet\s*:\s*(.+)", n)
-    if m:
-        e, k = "erkek" in m.group(1), "kadin" in m.group(1)
+    m = re.search(r"cinsiyet\w*\s*:?\s*(.+)", n)
+    scope = m.group(1) if m else (n if re.search(r"\b(?:erkek|kadin)\s+(?:olmak|adaylar|aday\w*|personel)", n) else None)
+    if scope:
+        e, k = "erkek" in scope, "kadin" in scope   # "kadın ve erkek" -> ikisi de: şart değil
         if e != k:
             add("gender", "E" if e else "K")
     if "mezun" in n:
@@ -127,6 +128,8 @@ def _extract_line(line: str, n: str) -> list:
         add("disability", {"required": True, "min_rate": rate})
     if "eski hukumlu" in n:
         add("former_convict", True)
+    if (re.search(r"\bboy(u|lu|\s+uzunlug\w*|\s+olcus\w*)?\b|\bkilo(su|nun|yu)?\b|\bcm\b|santimetre|vucut kitle", n)):
+        add("physical_text", line)
     if "ikamet" in n:
         add("residence_text", line)
     if "4/b" in n and "fesih" in n and re.search(r"bir yil", n):
@@ -273,14 +276,14 @@ def evaluate_all(reqs: list, prof: dict, deadline) -> list:
             if any(_overlap(n, p) for p in progs):
                 out.append(_res(k, "ok", "bölüm şartı profilinle eşleşiyor", r))
             else:
-                out.append(_res(k, "check", "bölüm şartını oku: " + v[:70], r))
+                out.append(_res(k, "check", "bölüm şartını oku: " + v[:140], r))
         elif k == "certificate_text":
             certs = _g(prof, "credentials", "certificates")
             n = norm(v)
             if certs and any(_overlap(n, c) for c in certs):
                 out.append(_res(k, "ok", "belge şartı profilinle eşleşiyor", r))
             else:
-                out.append(_res(k, "check", "belge şartını doğrula: " + v[:70], r))
+                out.append(_res(k, "check", "belge şartını doğrula: " + v[:140], r))
         elif k == "license":
             have = _g(prof, "credentials", "driving_license")
             if have is None:
@@ -356,7 +359,7 @@ def evaluate_all(reqs: list, prof: dict, deadline) -> list:
         elif k == "residence_text":
             res = _g(prof, "personal", "residence_province")
             ok = bool(res) and norm(res) in norm(v)
-            out.append(_res(k, "ok" if ok else "check", "ikamet şartı: " + ("uyuyor" if ok else v[:70]), r))
+            out.append(_res(k, "ok" if ok else "check", "ikamet şartı: " + ("uyuyor" if ok else v[:140]), r))
         elif k == "termination_4b":
             t = _g(prof, "work", "last_4b_termination")
             if not t:
@@ -365,8 +368,10 @@ def evaluate_all(reqs: list, prof: dict, deadline) -> list:
                 days = (on - date.fromisoformat(t)).days
                 out.append(_res(k, "no" if days < 365 * v else "ok",
                                 f"son 4/B fesih {t}: {'1 yıl dolmamış' if days < 365 * v else 'süre dolmuş'}", r))
+        elif k == "physical_text":
+            out.append(_res(k, "check", "fiziksel şartı oku: " + v[:140], r))
         elif k == "experience_text":
-            out.append(_res(k, "check", "deneyim şartını oku: " + v[:70], r))
+            out.append(_res(k, "check", "deneyim şartını oku: " + v[:140], r))
         elif k == "unparsed":
-            out.append(_res(k, "note", "otomatik okunamadı: " + r["evidence"][:90], r))
+            out.append(_res(k, "note", "otomatik okunamadı: " + r["evidence"][:140], r))
     return out

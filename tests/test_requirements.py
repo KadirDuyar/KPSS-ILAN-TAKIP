@@ -71,6 +71,31 @@ class Extract(unittest.TestCase):
         self.assertNotIn("department_text", kinds("Lise veya dengi okul mezunu olmak"))
 
 
+class Adli(unittest.TestCase):
+    """Adli Tıp / İnfaz ve Koruma Memuru (Kasım 2026) metinleri: cinsiyet ve fiziksel şartlar okunmalı."""
+    TXT = """Cinsiyeti erkek olmak.
+170 cm. 'den kısa boylu olmamak.
+Boy uzunluğunun santimetre cinsinden son iki rakamı ile kilosu arasındaki fark 13'ten fazla olmamak."""
+
+    def test_cinsiyet_ve_fiziksel(self):
+        k = [(r["kind"], r["value"]) for r in R.extract_text(self.TXT)]
+        self.assertIn(("gender", "E"), k)
+        self.assertEqual(sum(1 for x, _ in k if x == "physical_text"), 2)
+
+    def test_hicbir_zaman_uygun_cikmaz(self):
+        res = lv(self.TXT, FULL)               # profilde cinsiyet E olsa bile boy/kilo kontrol gerektirir
+        self.assertIn(("gender", "ok"), res)
+        self.assertEqual([l for k, l in res if k == "physical_text"], ["check", "check"])
+        p = {**FULL, "personal": {**FULL["personal"], "gender": "K"}}
+        self.assertIn(("gender", "no"), lv(self.TXT, p))
+        p = {**FULL, "personal": {"birth_date": "1995-05-01"}}   # cinsiyet belirtilmemiş -> check
+        self.assertIn(("gender", "check"), lv(self.TXT, p))
+
+    def test_yanlis_pozitif_yok(self):
+        self.assertNotIn("physical_text", kinds("Sözleşme süresi boyunca görev yapmak, kilometre bazlı ödeme"))
+        self.assertNotIn("gender", kinds("Kadın ve erkek adaylar başvurabilir"))
+
+
 class Evaluate(unittest.TestCase):
     def test_profil_uyuyor(self):
         res = lv(BTU_KADRO + "\n" + BTU_GENEL, FULL)
