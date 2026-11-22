@@ -155,11 +155,11 @@ async function matchesView(main) {
       : [h("div", { class: "empty" }, S.matches.length ? "Bu süzgeçle eşleşme yok." : "Henüz eşleşme yok. Profilini doldur; eşleşmeler her taramada (≈30 dk) hesaplanır.")]));
   };
   const empty = !S.profile || !Object.keys(S.profile).length;
-  main.replaceChildren(
+  main.replaceChildren(...[
     empty ? h("div", { class: "notice" }, "Profilin boş. Bilmediğin alanlar “Kontrol et” olarak görünür; doldurdukça sonuçlar netleşir. ",
       h("button", { class: "plain", onclick: () => { view = "profile"; shell(); } }, "Profili doldur →")) : null,
     h("p", { class: "meta" }, `Son tarama: ${fmtDate(S.lastSeen)} · ${S.matches.filter(r => r.level === "ok").length} uygun, ${S.matches.filter(r => r.level === "check").length} kontrol`),
-    filterBar(render, true), list);
+    filterBar(render, true), list].filter(Boolean));
   render();
 }
 

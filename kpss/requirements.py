@@ -345,11 +345,11 @@ def evaluate_all(reqs: list, prof: dict, deadline) -> list:
                 out.append(_res(k, "ok" if ex >= v else "no", f"deneyim {ex} yıl (aranan {v})", r))
         elif k == "language":
             sc = _g(prof, "exams", "language", default={}) or {}
-            if v["exam"] not in sc:
-                out.append(_res(k, "check", f"{v['exam']} puanı girilmemiş", r))
+            got = sc.get(v["exam"])
+            if got is None:
+                out.append(_res(k, "check", f"{v['exam']} puanı girilmemiş (aranan {v['min']})", r))
             else:
-                out.append(_res(k, "ok" if sc[v["exam"]] >= v["min"] else "no",
-                                f"{v['exam']} {sc[v['exam']]} (aranan {v['min']})", r))
+                out.append(_res(k, "ok" if got >= v["min"] else "no", f"{v['exam']} {got} (aranan {v['min']})", r))
         elif k == "ales":
             sc = _g(prof, "exams", "ales", "score")
             if sc is None:

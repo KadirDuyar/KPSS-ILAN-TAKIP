@@ -71,6 +71,18 @@ class Extract(unittest.TestCase):
         self.assertNotIn("department_text", kinds("Lise veya dengi okul mezunu olmak"))
 
 
+class Bos(unittest.TestCase):
+    """Formdan gelen null alanlar hiçbir şartta çökme yaratmamalı."""
+    def test_null_puanlar(self):
+        txt = "YDS’den en az 70 puan almış olmak\nALES’ten en az 70 puan almış olmak\nKamuda en az 3 yıl deneyim sahibi olmak"
+        p = {**FULL, "exams": {"kpss": {"scores": {"P3": None}, "year": None},
+                               "language": {"YDS": None, "YOKDIL": None}, "ales": {"score": None}},
+             "work": {"experience_years": None, "last_4b_termination": None}}
+        res = lv(txt, p)
+        self.assertTrue(all(l in ("check", "ok", "note") for _, l in res), res)
+        self.assertIn(("language", "check"), res)
+
+
 class Adli(unittest.TestCase):
     """Adli Tıp / İnfaz ve Koruma Memuru (Kasım 2026) metinleri: cinsiyet ve fiziksel şartlar okunmalı."""
     TXT = """Cinsiyeti erkek olmak.

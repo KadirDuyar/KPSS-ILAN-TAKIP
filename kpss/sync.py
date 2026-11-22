@@ -50,9 +50,10 @@ def sync(con, now=None) -> dict:
         for row in rows:
             try:
                 ev = m.evaluate(row, prof, now)
-            except Exception as e:
+            except Exception as e:  # ilan kaybolmasın: elle kontrol gereken ilan olarak göster
                 print(f"[sync] {row['guid']} değerlendirilemedi: {e}", file=sys.stderr)
-                continue
+                stats["errors"] = stats.get("errors", 0) + 1
+                ev = {"level": "check", "cands": [("check", None, ["otomatik değerlendirme başarısız, ilanı elle kontrol et"])]}
             if not ev:
                 continue
             reasons = sorted({r for c in ev["cands"] if c[0] == ev["level"] for r in c[2]})[:8]
