@@ -1,0 +1,31 @@
+name: reach-test
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: read
+jobs:
+  reach:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install requests
+      - name: ilan.gov.tr icin eksik ara sertifikayi resmi AIA adresinden ekle
+        continue-on-error: true
+        run: |
+          set -e
+          openssl s_client -connect www.ilan.gov.tr:443 -servername www.ilan.gov.tr </dev/null 2>/dev/null | openssl x509 -outform PEM > leaf.pem
+          AIA=$(openssl x509 -in leaf.pem -noout -text | grep -o 'http://[^ ]*\.crt' | head -1)
+          curl -sf -m 15 -o inter.der "$AIA"
+          openssl x509 -inform DER -in inter.der -out inter.pem
+          cat "$(python -c 'import certifi;print(certifi.where())')" inter.pem > ilan-bundle.pem
+          echo "REQUESTS_CA_BUNDLE=$PWD/ilan-bundle.pem" >> "$GITHUB_ENV"
+      - name: Erisim testi
+        run: python reach_test.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: reach-result
+          path: reach_result.json
