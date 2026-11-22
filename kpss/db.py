@@ -72,9 +72,15 @@ class DB:
     def ensure_schema(self):
         """Eksik tabloları/kolonları tamamlar (idempotent)."""
         if self.pg:
-            if not all(self.table_exists(t) for t in ("ilan", "profiles", "matches")):
+            # Yeni migration eklendiğinde buraya o migration'ın tablosunu ekle: eksikse hepsi (idempotent) çalışır.
+            if not all(self.table_exists(t) for t in ("ilan", "profiles", "matches", "push_tokens")):
                 for f in MIGRATIONS:  # hepsi idempotent; Supabase CLI kullanıyorsan zaten uygulanmıştır
-                    self.raw.execute(f.read_text(encoding="utf-8"))
+                    try:
+                        self.raw.execute(f.read_text(encoding="utf-8"))
+                        self.raw.commit()
+                    except Exception as e:  # bir migration hatası taramayı durdurmasın; logda görünür
+                        self.raw.rollback()
+                        print(f"[db] migration {f.name} uygulanamadı: {str(e).splitlines()[0]}", file=sys.stderr)
         else:
             self.raw.executescript(SQLITE_SCHEMA)
             have = {r[1] for r in self.raw.execute("PRAGMA table_info(ilan)")}

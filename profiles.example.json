@@ -24,7 +24,7 @@
       "credentials": { "driving_license": ["B"], "certificates": [] },
       "social": { "disability": { "has": null, "rate": null }, "former_convict": null },
       "consent": { "special_categories": false },
-      "notify": { "ntfy_topic": null, "enabled": true, "_not": "ntfy konu adı: en az 20 karakter [A-Za-z0-9_-], parola gibi gizli tut" },
+      "notify": { "enabled": true, "_not": "cihazlar push_tokens tablosunda (mobil uygulama kaydeder)" },
       "preferences": {
         "provinces": ["ANKARA", "İSTANBUL", "İZMİR"],
         "ilan_types": ["Sözleşmeli Personel İlanları", "A Grubu Memur (Kariyer Meslek)", "B Grubu Memur"],
